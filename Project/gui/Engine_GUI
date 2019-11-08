@@ -1,0 +1,211 @@
+#!/usr/bin/python3
+import tkinter as tk
+import sys
+import random
+from GameObject import GameObject
+
+# run with ' ./Engine_GUI '
+# install tkinter with ' sudo apt-get install python3-tk '
+# install PIL (pillow) with ' pip3 install pillow'
+
+class Engine_GUI():
+
+	def __init__(self, gameobjects=None, active_gameobjects_frame=None, active_inspector_frame=None):
+		self.active_gameobjects_frame = active_gameobjects_frame
+		self.active_inspector_frame = active_inspector_frame
+
+
+		self.root_frame = None
+		self.gameobjects_frame_root = None
+		self.inspector_frame_root = None
+		self.canvas = None
+		self.canvas_images = {}
+
+		#TODO if non-empty list of GO passed in, create python objects
+		self.gameobjects_in_scene = {}
+		self.ge_gameobject_ids_in_scene = []
+
+		self.last_selected_object = None
+		self.last_selected_gameobject = None
+
+	def exit_app(self):
+		sys.exit(0)
+
+	def setup(self):
+		self.root_frame = tk.Tk()
+		self.root_frame.title("GameMakers Engine")
+
+		main_menu = tk.Menu(self.root_frame)
+		self.root_frame.config(menu=main_menu)
+		
+		file_menu = tk.Menu(main_menu)
+		main_menu.add_cascade(label="File", menu=file_menu)
+		file_menu.add_command(label="Exit", command=self.exit_app)
+		main_menu.add_separator()
+		main_menu.add_command(label="Render", command=self.render_gameobjects)
+		
+		# Active Gameobjects Frame
+		self.gameobjects_frame_root = tk.Frame(self.root_frame, width=200, bg='#FFC', height=500, relief='sunken', borderwidth=2)
+		tk.Label(self.gameobjects_frame_root, text="Active Gameobjects", bg="green", fg="black", width=20).pack(fill=tk.X)
+		self.gameobjects_frame_root.pack(expand=True, fill='both', side='left', anchor='nw')
+		add_gameobj_menu = self.create_gameobject_menu(self.gameobjects_frame_root)
+
+		# Gameobject Inspector Frame
+		self.inspector_frame_root = tk.Frame(self.root_frame, width=200, bg='#FFC', height=500, relief='sunken', borderwidth=2)
+		tk.Label(self.inspector_frame_root, text="Inspector", bg="green", fg="black", width=20).pack(fill=tk.X)
+		self.inspector_frame_root.pack(expand=True, fill='both', side='right', anchor='ne')
+		add_component_menu = self.create_component_menu(self.inspector_frame_root)
+
+		# World Canvas (scene) Frame
+		self.canvas = tk.Canvas(self.root_frame, width=750, height=750)
+		self.canvas.pack(expand=True, fill='both', side='right')
+		
+		# Helps with usability to show no initial selection (prolly)
+		self.active_inspector_frame = tk.Frame(self.inspector_frame_root, bg='black', relief='sunken', borderwidth=2)
+		tk.Label(self.active_inspector_frame, text="No Selection", bg='black', fg='white', width=20, borderwidth=2).pack()
+		self.active_inspector_frame.pack(fill=tk.X)
+
+
+	def create_gameobject_menu(self, parent):
+		menubar = tk.Frame(parent)
+		menubar.pack(fill=tk.X)
+		add_gameobj_button = tk.Menubutton(menubar, text='Add Gameobject', underline=1, borderwidth=2)
+		add_gameobj_button.pack(fill=tk.X)
+		add_gameobj_menu = tk.Menu(add_gameobj_button)
+		add_gameobj_menu.add_command(label='New GO', command=lambda:self.gameobject_name_popup(), underline=0)
+		add_gameobj_button.config(menu=add_gameobj_menu)
+		return menubar
+
+	def create_component_menu(self, parent):
+		menubar = tk.Frame(parent)
+		menubar.pack(fill=tk.X)
+		add_comp_button = tk.Menubutton(menubar, text='Add Component', underline=1, relief='sunken', borderwidth=2)
+		add_comp_button.pack(fill=tk.X)
+		add_comp_menu = tk.Menu(add_comp_button)
+
+		add_comp_menu.add_command(label='Collider Component', command=lambda:self.add_component_to_gameobject('collider'), underline=0)
+		add_comp_menu.add_command(label='Audio Component', command=lambda:self.add_component_to_gameobject('audio'), underline=0)
+		add_comp_menu.add_command(label='Text Component', command=lambda:self.add_component_to_gameobject('text'), underline=0)
+		add_comp_menu.add_command(label='Image Component', command=lambda:self.add_component_to_gameobject('image'), underline=0)
+
+		add_comp_button.config(menu=add_comp_menu)
+		return menubar
+
+	def render_gameobjects(self):
+		self.canvas.delete("all")
+		self.canvas.update()
+		self.canvas_images = {}
+		for go_name in self.gameobjects_in_scene:
+			render_info = self.gameobjects_in_scene[go_name].render_image(self.canvas, self.canvas_images)
+			if render_info:
+				self.canvas_images[render_info[0]] = (render_info[1], render_info[2])
+		for img in self.canvas_images:
+			self.canvas.create_image(self.canvas_images[img][0], self.canvas_images[img][1], anchor=tk.NW, image=img)
+		print(len(self.canvas_images))
+		return
+
+	def cleanup_gameobject_popup(self, frame, entry):
+		self.add_gameobject_by_name(entry.get())
+		frame.destroy()
+
+	def gameobject_name_popup(self):
+		popup = tk.Toplevel(self.root_frame)
+		label = tk.Label(popup, text='Enter Name').pack(fill=tk.X)
+		entry = tk.Entry(popup)
+		submit_button = tk.Button(popup, text='Ok', command=lambda e=entry: self.cleanup_gameobject_popup(popup, e))
+		entry.pack()
+		submit_button.pack(fill=tk.X)
+
+	def check_guid_and_add(self, go_item):
+		self.gameobjects_in_scene[go_item.name] = go_item
+		while go_item.gid in self.ge_gameobject_ids_in_scene:
+			go_item.gid = random.randint(1000, 9999)
+		self.ge_gameobject_ids_in_scene.append(go_item.gid)
+		return
+
+	def add_gameobject_by_name(self, name):
+		go_item = None
+		try:
+			if self.gameobjects_in_scene[name]:
+				c = 1
+				name += "({})".format(c)
+				while self.gameobjects_in_scene[name]:
+					c += 1
+					name[:name.index("(")] += "({})".format(c)
+				go_item = GameObject(name)
+				self.check_guid_and_add(go_item)
+		except:
+			go_item = GameObject(name)
+			self.check_guid_and_add(go_item)
+		
+		go_item.add_component('transform', self.change_gameobject_transform)
+		go_item_frame = go_item.create_label_frame(self.gameobjects_frame_root, self.gameobject_clicked_update)
+		go_item_frame.pack(fill=tk.X)
+
+	def change_gameobject_text(self, entry):
+		entry = entry[1].get()
+		text_to_change = self.last_selected_gameobject.get_component('text')
+		text_to_change.set_text(entry)
+
+	def change_gameobject_image(self, entry):
+		entry = entry[1].get()
+		image_to_change = self.last_selected_gameobject.get_component('image')
+		image_to_change.set_image(entry)
+
+	def change_gameobject_transform(self, entry):
+		entry = entry[1].get()
+		x = None
+		y = None
+		rot = None
+		if "(" in entry or ")" in entry or "," not in entry:
+			if len(entry) == 0:
+				entry = '0,0,0'
+			else:
+				print("Invalid Input Format")
+				return
+		try:
+			vals = entry.split(',')
+			x = int(vals[0])
+			y = int(vals[1])
+			rot = int(vals[2])
+		except:
+			print("Invalid Input Values")
+			return
+		transform_to_change = self.last_selected_gameobject.get_component('transform')
+		transform_to_change.set_values(x, y, rot)
+
+	def add_component_to_gameobject(self, component_name):
+		if self.last_selected_gameobject and (self.last_selected_gameobject == self.last_selected_object):
+			print("Adding {} to selected GO: {} !".format(component_name, self.last_selected_gameobject.name))
+			
+			callback = None
+			if component_name == 'text':
+				callback = self.change_gameobject_text
+			elif component_name == 'image':
+				callback = self.change_gameobject_image
+
+			self.last_selected_gameobject.add_component(component_name, callback)
+			self.component_added_update_inspector_frame()
+		else:
+			print("No GO selected")
+
+	def component_added_update_inspector_frame(self):
+		self.active_inspector_frame.destroy()
+		self.active_inspector_frame = self.last_selected_gameobject.create_inspector_frame(self.inspector_frame_root)
+		self.active_inspector_frame.pack(fill=tk.X)
+
+	def gameobject_clicked_update(self, event):
+		clicked_gameobject = self.gameobjects_in_scene[event.widget["text"]]
+		if not self.last_selected_object == clicked_gameobject:
+			if self.active_inspector_frame:
+				self.active_inspector_frame.destroy()
+			self.active_inspector_frame = clicked_gameobject.create_inspector_frame(self.inspector_frame_root)
+			self.active_inspector_frame.pack(fill=tk.X)
+			self.last_selected_gameobject = clicked_gameobject
+			self.last_selected_object = clicked_gameobject
+			print("GO selected (name): {}".format(self.last_selected_gameobject.name))
+
+if __name__ == "__main__":
+	gui = Engine_GUI()
+	gui.setup()
+	gui.root_frame.mainloop()
